@@ -1,0 +1,119 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+Netværk, evt geokodning af Austen romaner. 
+
+Hvorfor Austen? Fordi det er hende alle bruger. Hun er vist nok en ret god 
+forfatter. Så giver hendes bøger vist også en fin indsigt i sociale forhold
+i GB på den tid. Det skader sikkert heller ikke at hun ikke var mand.
+
+Anyway, det betyder at der sandsynligvis er noget der ligner ground truth derude,
+så jeg kan se om jeg kommer i nærheden af noget der er bare antydningsvist rigtigt.
+
+Et eksempel på det kan vi finde her:
+https://p-mckenzie.github.io/2018/01/11/Jane-Austen/
+
+Her gør vi det så i Python i stedet for R. Dels skal jeg øve mig på Python.
+Dels vil det være rart, for mig selv, at demonstrere at jeg kan få samme resultater.
+
+Reproducibility baby!
+
+Bortset fra denne:
+
+```{r}
+library(reticulate)
+```
+Jeg arbejder nemlig i RStudio - så...
+
+```{python}
+1+1
+```
+
+# data
+Vi skal have noget data. Det får vi fra Project Gutenberg.
+
+
+Hvilke klasser af ord bruger hun? Er der forskelle?
+
+
+
+
+# vi kigger på noget austen. For det plejer man.
+
+library(janeaustenr)
+
+# først en enkelt af dem. Så må vi overveje hvordan resten kommer med
+# på en effektiv måde.
+sense <- janeaustenr::sensesensibility
+
+
+#remove the front matter up to row 9
+sense <- sense[-c(1:9)]
+
+# og skiller os af med den sidste linie:
+sense <- sense[-12615]
+
+
+
+trin1 <- sense %>% enframe(name=NULL) %>% 
+  mutate(chapter = case_when(
+    str_detect(value, "CHAPTER \\d") ~ value,
+    .default = NA_character_
+  )) %>% 
+  fill(chapter, .direction = "down") %>% 
+  filter(value != chapter) %>% 
+  group_by(chapter) %>% 
+  summarise(text= paste0(value, collapse= " ")) %>% 
+  ungroup() %>% 
+  mutate(chapter = as.numeric(str_remove(chapter, "CHAPTER")))   %>% 
+  mutate(sentences = map(text, spacy_tokenize, 'sentence')) 
+  
+trin2 <- trin1 %>% 
+  unnest_longer(sentences) %>% 
+  unnest_longer(sentences) %>% 
+  select(-c(text, sentences_id)) %>% 
+  mutate(sentences = str_trim(sentences)) %>% 
+  mutate(tokens = map(sentences, spacy_parse))
+           
+
+
+trin2  %>% 
+  unnest_longer(tokens)  %>% 
+unnest_wider(tokens)
+
+
+full_txt_sentence <- spacyr::spacy_tokenize(full_text, 'sentence')            
+
+
+str_split(sense, "chapter")[[2]]
+janeaustenr::austen_books() %>% 
+  group_by(book) %>% 
+  slice(1:13) %>% view()
+
+janeaustenr::emma
+
+
+
+
+spacy_install()
+
+
+
+  
+?as.numeric
+LMMstar::summarize()
+install.packages("LMMstar")
+#create sentence tokens
+full_txt_sentence <- spacyr::spacy_tokenize(full_text, 'sentence') 
+#create a df from the result
+casentino_sentences <- as.data.frame(do.call(cbind,
+                                             full_txt_sentence))
+parsedtxt <- spacy_parse(full_text)
+parsedtxt$entity %>% unique()
+
+parsedtxt %>% 
+  filter(str_detect(entity, "PERSON")) %>% 
+  distinct(entity, .keep_all=T)

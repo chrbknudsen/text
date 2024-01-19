@@ -1,0 +1,52 @@
+---
+title: "Named Entity Recognition"
+subtitle: "Med Spacy i Python"
+format: html
+editor: visual
+---
+
+## Quarto
+
+```{r echo = F, include = F}
+library(reticulate)
+py_install("nbformat")
+py_install("IPython")
+```
+
+```{python}
+import requests
+from bs4 import BeautifulSoup
+from IPython.display import display, HTML
+```
+
+```{python}
+def scrape_wikipedia_page(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+
+    # Just the first paragraph
+    first_paragraph = soup.find('p')
+    return first_paragraph.text
+```
+
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{python}
+import spacy
+from spacy import displacy
+```
+
+```{python}
+url = 'https://da.wikipedia.org/wiki/Python_(programmeringssprog)'  
+raw_text = scrape_wikipedia_page(url)
+```
+
+```{python}
+NER = spacy.load("da_core_news_md")
+text = NER(raw_text)
+```
+
+```{python results='asis'}
+displacy.render(text,style="ent", page = False)
+```

@@ -1,0 +1,356 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+Netværk, evt geokodning af Austen romaner.
+
+Why Austen? 
+Because everyone use her books for this kind of analyses. 
+
+They do that because she apparently is a pretty good author.
+And because her books give an insight into societal norms in Britain around the turn
+of the 18th to 19th centure.
+It probably doesn't hurt that she was not a man.
+
+That means that there is a very high probability that I can find analyses out there
+that provides some sort of ground truth. That will allow me to reassure myself that
+I'm doing something rigth.
+
+# The libraries
+```{r}
+library(tidyverse)
+library(readtext)
+library(tidytext)
+library(spacyr)
+library(janeaustenr)
+```
+
+# Getting the books
+
+```{r}
+books <- austen_books()
+head(books, 10)
+```
+# Getting data ready
+
+We have one line of text in each row in the *text* column. I would prefer
+one sentence. We also have some front matter in each book, that we do not
+need. 
+There is some chapter information. And in *Emma* there is more than one 
+volume.
+
+```{r}
+books %>% 
+  filter(book == "Emma") %>% 
+  slice(7:13)
+```
+
+
+Let us extract the volume and chapter information:
+
+```{r}
+books <- books %>% 
+  mutate(volume = case_when(
+    str_detect(text, "VOLUME") ~ text,
+    .default = NA_character_)
+  ) %>% 
+  mutate(chapter = case_when(
+    str_starts(text, "CHAPTER|Chapter") ~ text,
+    .default = NA_character_
+  ))
+```
+There is some inconsistency in the data. In Pride & Prejudice and in Persuasion,
+the chapters are written "Chapter", whereas in the rest of the books, chapter is
+capitalized.
+
+
+We need to get rid of everything before "Chapter 1" (or Chapter I in Mansfield Park and	Emma?)
+
+Grouping by book, filling the chapter column down but not up, and then
+removing all rows without chapter information does the trick. We need to start by 
+handling volume information
+
+```{r}
+books <- books %>% 
+  group_by(book) %>% 
+  fill(volume, .direction = "down") %>% 
+  fill(chapter, .direction = "down") %>% 
+  filter(!is.na(chapter)) %>% 
+  ungroup()
+```
+
+Next, lets get rid of the chapter and volume headings, and any empty lines.
+
+vi skal have værdier i volume. Også hvor bøgerne ikke har volume... Ellers går nedenstående galt:
+
+```{r}
+books <- books %>% 
+  filter(text != chapter) %>% 
+  replace_na(list(volume = "1")) %>% 
+  filter(text != volume)
+```
+
+```{r}
+str(books)
+```
+In *text* we have a line of text, rather than a sentence. The interesting unit
+of analysis is not an arbitrary line of text. But a sentence.
+
+Let us get som sentences.
+
+```{r}
+books <- books %>% 
+  group_by(book, volume, chapter) %>% 
+  summarise(sentences = paste0(text, collapse = " ")) %>% 
+  ungroup()
+```
+It would be nice to have the volumnes and chapters in numerical order. We do
+that by removing "CHAPTER", "Chapter" and "VOLUME" from the chapter and volume
+columns:
+```{r}
+books <- books %>% 
+  mutate(chapter = str_remove(chapter, "CHAPTER")) %>% 
+  mutate(chapter = str_remove(chapter, "Chapter")) %>%
+  mutate(volume = str_remove(volume, "VOLUME")) 
+
+```
+
+Looking at these two columns, we discover that some of the chapter (and volume)
+numbers are in roman numerals.
+
+The utils-package has an as.roman function. It can read both roman numerals (as text),
+and numbers (both as numeric and as text) and return an object of class "roman".
+Which has the type of numeric:
+```{r}
+typeof(as.roman("10"))
+as.roman("III")
+```
+One detail. There are whitespaces in the roman numerals we already have, and 
+that messes up the coercion:
+
+```{r}
+books <- books %>% 
+  mutate(volume = str_trim(volume)) %>% 
+  mutate(volume = as.numeric(as.roman(volume))) %>% 
+  mutate(chapter = str_trim(chapter)) %>% 
+  mutate(chapter = as.numeric(as.roman(chapter))) %>% 
+  arrange(book, volume, chapter)
+```
+
+Now we have a dataframe with one chapter pr row. Lets tokenize! (this is the point
+where my computer spins up the ventilator... But the task is not large enough
+to warrent trying to parallelise it)
+
+
+
+```{r}
+sentences <- books %>% 
+  mutate(tokens = map(sentences, spacy_parse))
+```
+
+The result is placed in a list column:
+```{r}
+head(sentences) %>% 
+  select(tokens)
+```
+ We need to unnest that.
+
+```{r}
+sentences %>% 
+  head() %>% 
+  unnest_longer(tokens) %>% 
+  unnest_wider(tokens) %>% 
+  select(sentence_id:entity)
+```
+
+Let us do it for the entire dataset:
+```{r}
+tokens <- sentences %>% 
+  unnest_longer(tokens) %>% 
+  unnest_wider(tokens) 
+```
+
+We again think about how to run this in parallel... Stil not really necessary.
+
+It is a rather large dataframe now, taking up almost 72 Mb in memory. But not 
+something a modern computer can handle - that is to say, I might want a more
+modern computer soon.
+
+Some columns are not really needed now. Let us get rid of those:
+
+```{r}
+tokens <- tokens %>% 
+  select(-c(sentences, doc_id))
+```
+
+54 Mb - a bit better.
+
+What do we have to work with? The *token* column simply holds the words of the 
+text. Combined with sentence.id (the number of that sentence in the chapter), and
+the token_id (the number of that token in that specific sentence), we are able
+to reconstruct the entire text. 
+
+lemma is the base form (lemmatized). 
+
+pos is "part of speach", or word class. 
+
+entity is the named entity that spacyr recognizes. "Dashwood" eg, is a GPE_B,
+that is, a geopolitical entity. The "B" indicates that thsi word is at the
+beginning of the named entity. In this case we only have one word. 
+
+```{r}
+tokens %>% head()
+```
+
+What types of pos do we have?
+
+```{r}
+tokens %>% 
+  pull(pos) %>% 
+  unique()
+```
+Eller:
+
+| POS Tag | Explanation                                        |
+|---------|----------------------------------------------------|
+| SPACE   | Space character or whitespace                      |
+| DET     | Determiner (e.g., "a", "the")                      |
+| NOUN    | Noun (e.g., "cat", "table")                        |
+| ADP     | Adposition (e.g., prepositions and postpositions)  |
+| PROPN   | Proper Noun (e.g., "John", "London")               |
+| AUX     | Auxiliary verb (e.g., "is", "has")                 |
+| ADV     | Adverb (e.g., "quickly", "very")                   |
+| VERB    | Verb (e.g., "run", "speak")                        |
+| PUNCT   | Punctuation (e.g., ".", "!")                       |
+| PRON    | Pronoun (e.g., "he", "they")                       |
+| ADJ     | Adjective (e.g., "big", "red")                     |
+| CCONJ   | Coordinating conjunction (e.g., "and", "but")      |
+| SCONJ   | Subordinating conjunction (e.g., "although", "if") |
+| PART    | Particle (e.g., "not", "out" in "out in")          |
+| NUM     | Numeral (e.g., "one", "2024")                      |
+| INTJ    | Interjection (e.g., "oh", "wow")                   |
+| X       | Other: foreign words, typos, etc.                  |
+| SYM     | Symbol (e.g., "$", "@")                            |
+
+And now we get to the part where my language skills are very weak. Not only in 
+English, but also in Danish. I have no instictual feeling about what and adverb is.
+
+We also had some entities:
+
+```{r}
+tokens %>% 
+  pull(entity) %>% 
+  unique()
+
+```
+Or:
+
+| NER Tag         | Explanation                                    |
+|-----------------|------------------------------------------------|
+| (empty string)  | No entity detected                             |
+| CARDINAL_B      | Beginning of a Cardinal number                 |
+| CARDINAL_I      | Inside a Cardinal number                       |
+| DATE_B          | Beginning of a Date                            |
+| DATE_I          | Inside a Date                                  |
+| EVENT_B         | Beginning of an Event                          |
+| FAC_B           | Beginning of a Facility                        |
+| FAC_I           | Inside a Facility                              |
+| GPE_B           | Beginning of a Geopolitical Entity             |
+| GPE_I           | Inside a Geopolitical Entity                   |
+| LANGUAGE_B      | Beginning of a Language                        |
+| LAW_B           | Beginning of a Law                             |
+| LAW_I           | Inside a Law                                   |
+| LOC_B           | Beginning of a Location                        |
+| LOC_I           | Inside a Location                              |
+| MONEY_B         | Beginning of a Money amount                    |
+| MONEY_I         | Inside a Money amount                          |
+| NORP_B          | Beginning of a National, Religious, or Political group |
+| NORP_I          | Inside a National, Religious, or Political group |
+| ORDINAL_B       | Beginning of an Ordinal number                 |
+| ORG_B           | Beginning of an Organization                   |
+| ORG_I           | Inside an Organization                         |
+| PERSON_B        | Beginning of a Person's name                   |
+| PERSON_I        | Inside a Person's name                         |
+| PRODUCT_B       | Beginning of a Product                         |
+| PRODUCT_I       | Inside a Product                               |
+| QUANTITY_B      | Beginning of a Quantity                        |
+| QUANTITY_I      | Inside a Quantity                              |
+| TIME_B          | Beginning of a Time expression                 |
+| TIME_I          | Inside a Time expression                       |
+| WORK_OF_ART_B   | Beginning of a Work of Art                     |
+| WORK_OF_ART_I   | Inside a Work of Art                           |
+
+
+Nice. Which products are mentioned?
+
+```{r}
+tokens %>% 
+  filter(str_starts(entity, "PRODUCT"))
+```
+
+There is room for improvement in the NER. "My dearest Emma", which appears
+in volume 3, chapter 13 of Emma, is probably not a product. 
+
+We can also note that Austen uses "--" when a new speaker starts talking. That 
+should probably be fixed. It becomes even more apparent looking at the "PUNCT"
+pos:
+
+```{r}
+tokens %>% 
+  filter(pos == "PUNCT") %>% 
+  pull(token) %>% 
+  unique()
+```
+
+Before beginning all over, there is one thing that we might take a look at.
+
+The named entities are recognized. But we recognize for each token. In the 
+example above, we saw that a named entity, a product, "My dearest Emma" 
+was recognized. Incorrectly, but the concept holds.
+```{r}
+tokens %>% 
+  filter(str_starts(entity, "PRODUCT")) %>% 
+  filter(book == "Emma") %>% 
+  filter(chapter == 13)
+```
+
+Looking specifically at sentence 82 in that chapter, we have recognized three
+entities. A product (incorrectly), an expression of time, and a person:
+```{r}
+tokens %>% 
+  filter(book == "Emma", 
+         volume == 3, 
+         chapter == 13,
+         sentence_id == 82) %>% 
+  filter(entity != "")
+
+```
+I would now like to be able to extract these three named entities. Not as above,
+but as "My dearest Emma", "hour" and "Emma"
+
+```{r}
+tokens %>% 
+  filter(book == "Emma", 
+         volume == 3, 
+         chapter == 13,
+         sentence_id == 82) %>% 
+  filter(entity != "") %>% 
+  mutate(entitet = str_ends(entity, "_B")) %>% 
+  mutate(entitet = case_when(
+    entitet ~ token_id, 
+    .default = NA
+  )) %>% 
+  fill(entitet, .direction = "down") %>% 
+  ungroup() %>% 
+  group_by(entitet) %>% 
+  summarise(book = unique(book), 
+            volume = min(volume), 
+            entity = unique(entity),
+            chapter = min(chapter),
+            sentence_id = min(sentence_id),
+            token_id = min(token_id),
+            entitet = paste0(token, collapse = " "))
+```
+
