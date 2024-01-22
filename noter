@@ -1,0 +1,43 @@
+https://www.turing.com/kb/guide-on-word-embeddings-in-nlp
+
+Vi har det vist allerede på tidy format.
+
+ 
+
+Så. En gang til, uden ”- -”
+
+ 
+
+Ordklasser – frekvens fordelt på bøger
+
+Er der froskelle over kapitler?
+
+ 
+
+ 
+
+Sentiment analyse. På bøger og på kapitler i bøger
+
+Hyppighed af positive og negative ord
+
+ 
+
+Occurences pr character
+
+Co-occurence
+
+ 
+
+Tf-idf
+
+Ngrams. Og sentimentanalyse på det.
+
+Graf/netværk på bigrammer.
+
+ 
+
+DTM
+
+ 
+
+LDA – både på bøger og kapitler
