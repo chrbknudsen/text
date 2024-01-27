@@ -93,6 +93,19 @@ books <- books %>%
   ungroup()
 ```
 
+Now we have a dataframe with one chapter in each row. 
+
+If we do not handle it now, we will later discover that Austen sometimes uses 
+"--" to indicate that someone new is speaking. Lets get rid of that now, rather
+than later:
+
+```{r}
+books <- books %>% 
+  mutate(sentences = str_replace_all(sentences, "--", " "))
+```
+
+
+
 It would be nice to have the volumnes and chapters in numerical order. We do that by removing "CHAPTER", "Chapter" and "VOLUME" from the chapter and volume columns:
 
 ```{r}
@@ -100,9 +113,16 @@ books <- books %>%
   mutate(chapter = str_remove(chapter, "CHAPTER")) %>% 
   mutate(chapter = str_remove(chapter, "Chapter")) %>%
   mutate(volume = str_remove(volume, "VOLUME")) 
-
 ```
 
+Now we just have to coerce chapter and volume to numbers. However:
+```{r}
+books %>% 
+  pull(chapter) %>% 
+  unique()
+```
+
+Roman numerals (and whitespace at the beginning).
 Looking at these two columns, we discover that some of the chapter (and volume) numbers are in roman numerals.
 
 The utils-package has an as.roman function. It can read both roman numerals (as text), and numbers (both as numeric and as text) and return an object of class "roman". Which has the type of numeric:
@@ -148,9 +168,11 @@ tokens <- sentences %>%
 ```
 
 
-
+And then we unnest
 ```{r}
-tokens <- unnest(tokens, tokens)
+tokens <- unnest(tokens, cols = c(tokens))
+
+head(tokens)
 ```
 
 
@@ -183,7 +205,7 @@ tokens %>%
   unique()
 ```
 
-Or:
+Or, in a nice table:
 
 | POS Tag | Explanation                                        |
 |---------|----------------------------------------------------|
@@ -217,7 +239,7 @@ tokens %>%
 
 ```
 
-Or:
+Or, in a nice table:
 
 | NER Tag        | Explanation                                            |
 |----------------|--------------------------------------------------------|
@@ -261,6 +283,10 @@ tokens %>%
   filter(str_starts(entity, "PRODUCT"))
 ```
 
+This is the point in our analysis where we discover that we should do something
+about "--". LINK TIL TIDLIGERE, HVOR JEG NÆVNER AT HVIS IKKE VI FJERNER DEM,
+VIL VI SENERE OPDAGE AT DE ER ET PROBLEM.
+
 There is room for improvement in the NER. "My dearest Emma", which appears in volume 3, chapter 13 of Emma, is probably not a product.
 
 We can also note that Austen uses "--" when a new speaker starts talking. That should probably be fixed. It becomes even more apparent looking at the "PUNCT" pos:
@@ -272,10 +298,10 @@ tokens %>%
   unique()
 ```
 
-Before beginning all over, this is one thing that we might take a look at.
+
 
 The named entities are recognized. But we recognize for each token. In the example above, we saw that a named entity, a product, "My dearest Emma" was recognized. Incorrectly, but the concept holds.
-
+VI SKAL HAVE ILLUSTRERET OVENFOR AT "My dearest Emma" ER ET PRODUCT.
 ```{r}
 tokens %>% 
   filter(str_starts(entity, "PRODUCT")) %>% 
@@ -317,5 +343,29 @@ tokens %>%
   summarise(  entiteten = paste0(token, collapse = " "))
 ```
 
-So - now we have learned a bit that needs improving, and we can close (hopefully)
-the book on preparing the data.
+Now we should do this on the entire dataset:
+```{r}
+named_entities <- tokens %>% 
+  filter(entity != "") %>% # we are not interested in empty entities
+  mutate(entitet = case_when(
+    str_ends(entity, "_B") ~ token_id, # TRUE if it is the beginning of a NE
+    .default = NA
+  )) %>% 
+  fill(entitet, .direction = "down") %>% # Filling down - if the row contains a NE, it now contains the position of
+                                         # the beginning of the NE
+  ungroup() %>% 
+  mutate(entity = str_remove(entity, "_B|_I")) %>% # Only interested in the type of NE
+  group_by(book, volume, chapter, sentence_id, entity, entitet) %>% 
+  summarise(  entiteten = paste0(token, collapse = " "))
+```
+
+
+
+```{r}
+tail(named_entities)
+```
+
+```{r}
+sentences
+```
+
