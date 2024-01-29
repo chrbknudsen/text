@@ -395,9 +395,35 @@ tokens %>% head(n = 10)
 ```
 
 
-Sentiment
+# Comparing vocabulary
+Når jeg tæller ord her, tæller jeg i virkeligheden tokens.
+Og de er ikke alle rent faktisk ord...
 
-afinn
+
+Så jeg skal have pillet de tokens ud der faktisk er ord.
+
+Hvordan får jeg fat på de ord der kun bliver brugt i en af
+bøgerne?
+
+```{r}
+tokens %>% 
+  mutate(word = str_to_lower(token)) %>% 
+  group_by(book) %>% 
+  distinct(word) %>% 
+  arrange(word)
+  summarise(word_count = n())
+
+```
+
+# ordfrekvenser
+
+Hvad er, efter vi har fjernet stopord, de 5 hyppigste adjektiver
+i bøgerne? Hvilke ord er de fem hyppigste navneord? Adverbier,
+udsagnsord?
+
+# Sentiment
+
+## afinn
 
 Rolling aggregates operate in a fixed width window. You won’t find them in base R or in dplyr, but there are many implementations in other packages, such as RcppRoll.
 
@@ -422,7 +448,7 @@ tokens %>% left_join(AFINN, by = c("token" = "word")) %>%
 library(zoo)
 library(data.table)
 
-n = 50
+n = 100
 tokens %>% left_join(AFINN, by = c("token" = "word")) %>% 
   group_by(book, volume, chapter, sentence_id) %>% 
   summarise(sentiment = mean(value, na.rm = T)) %>% 
@@ -433,11 +459,43 @@ tokens %>% left_join(AFINN, by = c("token" = "word")) %>%
   group_by(book) %>% 
   mutate(rolling_sentiment = frollmean(sentiment, n, na.rm =T )) %>% 
   ungroup() %>% 
+  filter(book == "Emma") %>% 
   ggplot(aes(rækkefølge, rolling_sentiment)) +
-  geom_line() +
-  facet_wrap(vars(book))
+  geom_line() 
 
 
 
 ```
 der må være en enklere måde...
+
+
+Hvordan med de andre sentiment ordlister?
+
+## bing
+
+## loughran 
+
+##nrc
+
+
+# Hvornår dukker karaktererne op?
+
+det er vist noget i retning af hvor mange sætninger optræder
+en karakter i - som andel af antal sætninger pr kapitel.
+
+# karakter netværk
+
+Hm...
+
+# lokationer
+```{r}
+named_entities %>% 
+  filter(entity == "WORK_OF_ART")
+  
+```
+
+
+# produkter?
+
+
+
