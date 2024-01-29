@@ -6,25 +6,21 @@ editor: visual
 
 Netværk, evt geokodning af Austen romaner.
 
-Why Austen? 
-Because everyone use her books for this kind of analyses. 
+Why Austen? Because everyone use her books for this kind of analyses.
 
-They do that because she apparently is a pretty good author.
-And because her books give an insight into societal norms in Britain around the turn
-of the 18th to 19th centure.
-It probably doesn't hurt that she was not a man.
+They do that because she apparently is a pretty good author. And because her books give an insight into societal norms in Britain around the turn of the 18th to 19th centure. It probably doesn't hurt that she was not a man.
 
-That means that there is a very high probability that I can find analyses out there
-that provides some sort of ground truth. That will allow me to reassure myself that
-I'm doing something rigth.
+That means that there is a very high probability that I can find analyses out there that provides some sort of ground truth. That will allow me to reassure myself that I'm doing something rigth.
 
 # The libraries
+
 ```{r}
 library(tidyverse)
 library(readtext)
 library(tidytext)
 library(spacyr)
 library(janeaustenr)
+library(RcppRoll)
 ```
 
 # Getting the books
@@ -33,20 +29,16 @@ library(janeaustenr)
 books <- austen_books()
 head(books, 10)
 ```
+
 # Getting data ready
 
-We have one line of text in each row in the *text* column. I would prefer
-one sentence. We also have some front matter in each book, that we do not
-need. 
-There is some chapter information. And in *Emma* there is more than one 
-volume.
+We have one line of text in each row in the *text* column. I would prefer one sentence. We also have some front matter in each book, that we do not need. There is some chapter information. And in *Emma* there is more than one volume.
 
 ```{r}
 books %>% 
   filter(book == "Emma") %>% 
   slice(7:13)
 ```
-
 
 Let us extract the volume and chapter information:
 
@@ -61,16 +53,12 @@ books <- books %>%
     .default = NA_character_
   ))
 ```
-There is some inconsistency in the data. In Pride & Prejudice and in Persuasion,
-the chapters are written "Chapter", whereas in the rest of the books, chapter is
-capitalized.
 
+There is some inconsistency in the data. In Pride & Prejudice and in Persuasion, the chapters are written "Chapter", whereas in the rest of the books, chapter is capitalized.
 
-We need to get rid of everything before "Chapter 1" (or Chapter I in Mansfield Park and	Emma?)
+We need to get rid of everything before "Chapter 1" (or Chapter I in Mansfield Park and Emma?)
 
-Grouping by book, filling the chapter column down but not up, and then
-removing all rows without chapter information does the trick. We need to start by 
-handling volume information
+Grouping by book, filling the chapter column down but not up, and then removing all rows without chapter information does the trick. We need to start by handling volume information
 
 ```{r}
 books <- books %>% 
@@ -83,22 +71,21 @@ books <- books %>%
 
 Next, lets get rid of the chapter and volume headings, and any empty lines.
 
-vi skal have værdier i volume. Også hvor bøgerne ikke har volume... Ellers går nedenstående galt:
-
 ```{r}
 books <- books %>% 
   filter(text != chapter) %>% 
   replace_na(list(volume = "1")) %>% 
-  filter(text != volume)
+  filter(text != volume) %>% 
+  filter(text != "")
 ```
 
 ```{r}
 str(books)
 ```
-In *text* we have a line of text, rather than a sentence. The interesting unit
-of analysis is not an arbitrary line of text. But a sentence.
 
-Let us get som sentences.
+In *text* we have a line of text, rather than a sentence. The interesting unit of analysis is not an arbitrary line of text. But a sentence.
+
+Let us get some sentences.
 
 ```{r}
 books <- books %>% 
@@ -106,16 +93,36 @@ books <- books %>%
   summarise(sentences = paste0(text, collapse = " ")) %>% 
   ungroup()
 ```
-It would be nice to have the volumnes and chapters in numerical order. We do
-that by removing "CHAPTER", "Chapter" and "VOLUME" from the chapter and volume
-columns:
+
+Now we have a dataframe with one chapter in each row. 
+
+If we do not handle it now, we will later discover that Austen sometimes uses 
+"--" to indicate that someone new is speaking. Lets get rid of that now, rather
+than later:
+
+```{r}
+books <- books %>% 
+  mutate(sentences = str_replace_all(sentences, "--", " "))
+```
+
+
+
+It would be nice to have the volumnes and chapters in numerical order. We do that by removing "CHAPTER", "Chapter" and "VOLUME" from the chapter and volume columns:
+
 ```{r}
 books <- books %>% 
   mutate(chapter = str_remove(chapter, "CHAPTER")) %>% 
   mutate(chapter = str_remove(chapter, "Chapter")) %>%
   mutate(volume = str_remove(volume, "VOLUME")) 
-
 ```
+
+Now we just have to coerce chapter and volume to numbers. However:
+```{r}
+books %>% 
+  pull(chapter) %>% 
+  unique()
+```
+
 
 ```{r}
 books$chapter %>% unique()
@@ -125,15 +132,18 @@ books$chapter %>% unique()
 Looking at these two columns, we discover that some of the chapter (and volume)
 numbers are in roman numerals.
 
-The utils-package has an as.roman function. It can read both roman numerals (as text),
-and numbers (both as numeric and as text) and return an object of class "roman".
-Which has the type of numeric:
+Roman numerals (and whitespace at the beginning).
+Looking at these two columns, we discover that some of the chapter (and volume) numbers are in roman numerals.
+
+The utils-package has an as.roman function. It can read both roman numerals (as text), and numbers (both as numeric and as text) and return an object of class "roman". Which has the type of numeric:
+
+
 ```{r}
 typeof(as.roman(10))
 as.integer(as.roman("III"))
 ```
-One detail. There are whitespaces in the roman numerals we already have, and 
-that messes up the coercion:
+
+One detail. There are whitespaces in the roman numerals we already have, and that messes up the coercion:
 
 ```{r}
 books <- books %>% 
@@ -144,11 +154,7 @@ books <- books %>%
   arrange(book, volume, chapter)
 ```
 
-Now we have a dataframe with one chapter pr row. Lets tokenize! (this is the point
-where my computer spins up the ventilator... But the task is not large enough
-to warrent trying to parallelise it)
-
-
+Now we have a dataframe with one chapter pr row. Lets tokenize! (this is the point where my computer spins up the ventilator... But the task is not large enough to warrent trying to parallelise it) Eller også er den - for det tager noget længere tid på tærten. Det er furrr vi skal have fat på
 
 ```{r}
 sentences <- books %>% 
@@ -156,55 +162,56 @@ sentences <- books %>%
 ```
 
 The result is placed in a list column:
+
 ```{r}
 head(sentences) %>% 
   select(tokens)
 ```
- We need to unnest that.
 
+We need to unnest that.
+
+First of all, let us make that sentence dataframe a 
+bit more easy  to handle. It will also bring us one step closer
+to normalising the entire dataset.
 ```{r}
+
 sentences %>% 
   head() %>% 
   unnest_longer(tokens) %>% 
   unnest_wider(tokens) 
 #  select(sentence_id:entity) 
 
-```
 
-Let us do it for the entire dataset:
-```{r}
 tokens <- sentences %>% 
-  unnest_longer(tokens) %>% 
-  unnest_wider(tokens) 
+  select(-sentences)
+
 ```
 
-We again think about how to run this in parallel... Stil not really necessary.
 
-It is a rather large dataframe now, taking up almost 72 Mb in memory. But not 
-something a modern computer can handle - that is to say, I might want a more
-modern computer soon.
+And then we unnest
+```{r}
+tokens <- unnest(tokens, cols = c(tokens))
 
-Some columns are not really needed now. Let us get rid of those:
+head(tokens)
+```
+
+
+It is a rather large dataframe now, taking up almost 72 Mb in memory. But not something a modern computer can handle - that is to say, I might want a more modern computer soon.
+
+Some columns are not really needed now. Let us get rid of that:
 
 ```{r}
-tokens <- tokens %>% 
-  select(-c(sentences, doc_id))
+tokens <- tokens %>% select(-doc_id)
 ```
 
-54 Mb - a bit better.
 
-What do we have to work with? The *token* column simply holds the words of the 
-text. Combined with sentence.id (the number of that sentence in the chapter), and
-the token_id (the number of that token in that specific sentence), we are able
-to reconstruct the entire text. 
+What do we have to work with? The *token* column simply holds the words of the text. Combined with sentence.id (the number of that sentence in the chapter), and the token_id (the number of that token in that specific sentence), we are able to reconstruct the entire text.
 
-lemma is the base form (lemmatized). 
+lemma is the base form (lemmatized).
 
-pos is "part of speach", or word class. 
+pos is "part of speach", or word class.
 
-entity is the named entity that spacyr recognizes. "Dashwood" eg, is a GPE_B,
-that is, a geopolitical entity. The "B" indicates that thsi word is at the
-beginning of the named entity. In this case we only have one word. 
+entity is the named entity that spacyr recognizes. "Dashwood" eg, is a GPE_B, that is, a geopolitical entity. The "B" indicates that this word is at the beginning of the named entity. In this case we only have one word.
 
 ```{r}
 tokens %>% head()
@@ -217,7 +224,8 @@ tokens %>%
   pull(pos) %>% 
   unique()
 ```
-Eller:
+
+Or, in a nice table:
 
 | POS Tag | Explanation                                        |
 |---------|----------------------------------------------------|
@@ -238,10 +246,9 @@ Eller:
 | NUM     | Numeral (e.g., "one", "2024")                      |
 | INTJ    | Interjection (e.g., "oh", "wow")                   |
 | X       | Other: foreign words, typos, etc.                  |
-| SYM     | Symbol (e.g., "$", "@")                            |
+| SYM     | Symbol (e.g., "\$", "\@")                          |
 
-And now we get to the part where my language skills are very weak. Not only in 
-English, but also in Danish. I have no instictual feeling about what and adverb is.
+And now we get to the part where my language skills are very weak. Not only in English, but also in Danish. I have no instinctual feeling about what an adverb is.
 
 We also had some entities:
 
@@ -251,43 +258,43 @@ tokens %>%
   unique()
 
 ```
-Or:
 
-| NER Tag         | Explanation                                    |
-|-----------------|------------------------------------------------|
-| (empty string)  | No entity detected                             |
-| CARDINAL_B      | Beginning of a Cardinal number                 |
-| CARDINAL_I      | Inside a Cardinal number                       |
-| DATE_B          | Beginning of a Date                            |
-| DATE_I          | Inside a Date                                  |
-| EVENT_B         | Beginning of an Event                          |
-| FAC_B           | Beginning of a Facility                        |
-| FAC_I           | Inside a Facility                              |
-| GPE_B           | Beginning of a Geopolitical Entity             |
-| GPE_I           | Inside a Geopolitical Entity                   |
-| LANGUAGE_B      | Beginning of a Language                        |
-| LAW_B           | Beginning of a Law                             |
-| LAW_I           | Inside a Law                                   |
-| LOC_B           | Beginning of a Location                        |
-| LOC_I           | Inside a Location                              |
-| MONEY_B         | Beginning of a Money amount                    |
-| MONEY_I         | Inside a Money amount                          |
-| NORP_B          | Beginning of a National, Religious, or Political group |
-| NORP_I          | Inside a National, Religious, or Political group |
-| ORDINAL_B       | Beginning of an Ordinal number                 |
-| ORG_B           | Beginning of an Organization                   |
-| ORG_I           | Inside an Organization                         |
-| PERSON_B        | Beginning of a Person's name                   |
-| PERSON_I        | Inside a Person's name                         |
-| PRODUCT_B       | Beginning of a Product                         |
-| PRODUCT_I       | Inside a Product                               |
-| QUANTITY_B      | Beginning of a Quantity                        |
-| QUANTITY_I      | Inside a Quantity                              |
-| TIME_B          | Beginning of a Time expression                 |
-| TIME_I          | Inside a Time expression                       |
-| WORK_OF_ART_B   | Beginning of a Work of Art                     |
-| WORK_OF_ART_I   | Inside a Work of Art                           |
+Or, in a nice table:
 
+| NER Tag        | Explanation                                            |
+|----------------|--------------------------------------------------------|
+| (empty string) | No entity detected                                     |
+| CARDINAL_B     | Beginning of a Cardinal number                         |
+| CARDINAL_I     | Inside a Cardinal number                               |
+| DATE_B         | Beginning of a Date                                    |
+| DATE_I         | Inside a Date                                          |
+| EVENT_B        | Beginning of an Event                                  |
+| FAC_B          | Beginning of a Facility                                |
+| FAC_I          | Inside a Facility                                      |
+| GPE_B          | Beginning of a Geopolitical Entity                     |
+| GPE_I          | Inside a Geopolitical Entity                           |
+| LANGUAGE_B     | Beginning of a Language                                |
+| LAW_B          | Beginning of a Law                                     |
+| LAW_I          | Inside a Law                                           |
+| LOC_B          | Beginning of a Location                                |
+| LOC_I          | Inside a Location                                      |
+| MONEY_B        | Beginning of a Money amount                            |
+| MONEY_I        | Inside a Money amount                                  |
+| NORP_B         | Beginning of a National, Religious, or Political group |
+| NORP_I         | Inside a National, Religious, or Political group       |
+| ORDINAL_B      | Beginning of an Ordinal number                         |
+| ORG_B          | Beginning of an Organization                           |
+| ORG_I          | Inside an Organization                                 |
+| PERSON_B       | Beginning of a Person's name                           |
+| PERSON_I       | Inside a Person's name                                 |
+| PRODUCT_B      | Beginning of a Product                                 |
+| PRODUCT_I      | Inside a Product                                       |
+| QUANTITY_B     | Beginning of a Quantity                                |
+| QUANTITY_I     | Inside a Quantity                                      |
+| TIME_B         | Beginning of a Time expression                         |
+| TIME_I         | Inside a Time expression                               |
+| WORK_OF_ART_B  | Beginning of a Work of Art                             |
+| WORK_OF_ART_I  | Inside a Work of Art                                   |
 
 Nice. Which products are mentioned?
 
@@ -296,12 +303,16 @@ tokens %>%
   filter(str_starts(entity, "PRODUCT"))
 ```
 
-There is room for improvement in the NER. "My dearest Emma", which appears
-in volume 3, chapter 13 of Emma, is probably not a product. 
+This is the point in our analysis where we discover that we should do something
+about "--". LINK TIL TIDLIGERE, HVOR JEG NÆVNER AT HVIS IKKE VI FJERNER DEM,
+VIL VI SENERE OPDAGE AT DE ER ET PROBLEM.
 
-We can also note that Austen uses "--" when a new speaker starts talking. That 
-should probably be fixed. It becomes even more apparent looking at the "PUNCT"
-pos:
+FASCINERENDE NOK DUKKER My dearest Emma ikke op som produkt efter "--" er fjernet.
+
+
+There is room for improvement in the NER. "My dearest Emma", which appears in volume 3, chapter 13 of Emma, is probably not a product.
+
+We can also note that Austen uses "--" when a new speaker starts talking. That should probably be fixed. It becomes even more apparent looking at the "PUNCT" pos:
 
 ```{r}
 tokens %>% 
@@ -310,53 +321,123 @@ tokens %>%
   unique()
 ```
 
-Before beginning all over, there is one thing that we might take a look at.
 
-The named entities are recognized. But we recognize for each token. In the 
-example above, we saw that a named entity, a product, "My dearest Emma" 
-was recognized. Incorrectly, but the concept holds.
+
+The named entities are recognized. But we recognize for each token. In the example above, we saw that a named entity, a product, "My dearest Emma" was recognized. Incorrectly, but the concept holds.
+VI SKAL HAVE ILLUSTRERET OVENFOR AT "My dearest Emma" ER ET PRODUCT. 
 ```{r}
 tokens %>% 
   filter(str_starts(entity, "PRODUCT")) %>% 
   filter(book == "Emma") %>% 
-  filter(chapter == 13)
+  filter(chapter == 13) %>% 
+  select(sentence_id:token, entity)
 ```
 
-Looking specifically at sentence 82 in that chapter, we have recognized three
-entities. A product (incorrectly), an expression of time, and a person:
-```{r}
-tokens %>% 
-  filter(book == "Emma", 
-         volume == 3, 
-         chapter == 13,
-         sentence_id == 82) %>% 
-  filter(entity != "")
-
-```
-I would now like to be able to extract these three named entities. Not as above,
-but as "My dearest Emma", "hour" and "Emma"
+Looking specifically at sentence 82 in that chapter, we have recognized three entities. A product (incorrectly), an expression of time, and a person:
 
 ```{r}
 tokens %>% 
   filter(book == "Emma", 
          volume == 3, 
          chapter == 13,
+         sentence_id == 82)
+
+```
+
+OG DENNE DUER NATURLIGVIS IKKE SOM EKSEMPEL LÆNGERE, FOR NÅR JEG FJERNER "--" 
+ÆNDRES NUMMERERINGEN AF SÆTNINGER NATURLIGVIS OGSÅ!
+
+I would now like to be able to extract these three named entities. Not as above, but as "My dearest Emma", "hour" and "Emma"
+
+```{r}
+tokens %>% 
+  filter(book == "Emma", 
+         volume == 3, 
+         chapter == 13,
          sentence_id == 82) %>% 
-  filter(entity != "") %>% 
-  mutate(entitet = str_ends(entity, "_B")) %>% 
+  filter(entity != "") %>% # we are not interested in empty entities
   mutate(entitet = case_when(
-    entitet ~ token_id, 
+    str_ends(entity, "_B") ~ token_id, # TRUE if it is the beginning of a NE
     .default = NA
   )) %>% 
-  fill(entitet, .direction = "down") %>% 
+  fill(entitet, .direction = "down") %>% # Filling down - if the row contains a NE, it now contains the position of
+                                         # the beginning of the NE
   ungroup() %>% 
-  group_by(entitet) %>% 
-  summarise(book = unique(book), 
-            volume = min(volume), 
-            entity = unique(entity),
-            chapter = min(chapter),
-            sentence_id = min(sentence_id),
-            token_id = min(token_id),
-            entitet = paste0(token, collapse = " "))
+  mutate(entity = str_remove(entity, "_B|_I")) %>% # Only interested in the type of NE
+  group_by(book, volume, chapter, sentence_id, entity, entitet) %>% 
+  summarise(  entiteten = paste0(token, collapse = " "))
+```
+
+Now we should do this on the entire dataset:
+```{r}
+named_entities <- tokens %>% 
+  filter(entity != "") %>% # we are not interested in empty entities
+  mutate(entitet = case_when(
+    str_ends(entity, "_B") ~ token_id, # TRUE if it is the beginning of a NE
+    .default = NA
+  )) %>% 
+  fill(entitet, .direction = "down") %>% # Filling down - if the row contains a NE, it now contains the position of
+                                         # the beginning of the NE
+  ungroup() %>% 
+  mutate(entity = str_remove(entity, "_B|_I")) %>% # Only interested in the type of NE
+  group_by(book, volume, chapter, sentence_id, entity, entitet) %>% 
+  summarise(  entiteten = paste0(token, collapse = " "))
+```
+
+
+
+```{r}
+tail(named_entities)
+```
+
+```{r}
+tokens %>% head(n = 10)
+```
+
+
+Sentiment
+
+afinn
+
+Rolling aggregates operate in a fixed width window. You won’t find them in base R or in dplyr, but there are many implementations in other packages, such as RcppRoll.
+
+```{r}
+AFINN <- get_sentiments(lexicon = "afinn")
+str(AFINN)
+```
+ikke meget nyttig:
+```{r}
+tokens %>% left_join(AFINN, by = c("token" = "word")) %>% 
+  group_by(book, volume, chapter, sentence_id) %>% 
+  summarise(sentiment = sum(value, na.rm = T)) %>% 
+  ungroup() %>% 
+  group_by(book) %>% 
+  mutate(rækkefølge = row_number()) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = rækkefølge, y = sentiment)) +
+  geom_line() +
+  facet_wrap(~book, scales = "free")
+```
+```{r}
+library(zoo)
+library(data.table)
+
+n = 50
+tokens %>% left_join(AFINN, by = c("token" = "word")) %>% 
+  group_by(book, volume, chapter, sentence_id) %>% 
+  summarise(sentiment = mean(value, na.rm = T)) %>% 
+  ungroup() %>% 
+  group_by(book) %>% 
+  mutate(rækkefølge = row_number()) %>% 
+  ungroup() %>% 
+  group_by(book) %>% 
+  mutate(rolling_sentiment = frollmean(sentiment, n, na.rm =T )) %>% 
+  ungroup() %>% 
+  ggplot(aes(rækkefølge, rolling_sentiment)) +
+  geom_line() +
+  facet_wrap(vars(book))
+
+
+
 ```
 der må være en enklere måde...
