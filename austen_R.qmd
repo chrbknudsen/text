@@ -4,6 +4,9 @@ format: html
 editor: visual
 ---
 
+
+https://cran.r-project.org/web/packages/spacyr/vignettes/using_spacyr.html
+
 Netværk, evt geokodning af Austen romaner.
 
 Why Austen? Because everyone use her books for this kind of analyses.
@@ -169,7 +172,7 @@ Hvordan får jeg indlæst den store, i stedet for den lille?
 
 ```{r}
 spacy_download_langmodel("en_core_web_lg")
-spacy_initialize('en_core_web_sm')
+spacy_initialize(model='en_core_web_lg')
 
 ```
 
