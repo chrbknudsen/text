@@ -161,6 +161,20 @@ sentences <- books %>%
   mutate(tokens = map(sentences, spacy_parse))
 ```
 
+DET ER MED en_core_web_sm. 
+
+hvad har vi ellers?
+
+Hvordan får jeg indlæst den store, i stedet for den lille?
+
+```{r}
+spacy_download_langmodel("en_core_web_lg")
+spacy_initialize('en_core_web_sm')
+
+```
+
+
+
 The result is placed in a list column:
 
 ```{r}
