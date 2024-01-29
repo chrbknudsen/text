@@ -20,6 +20,7 @@ library(readtext)
 library(tidytext)
 library(spacyr)
 library(janeaustenr)
+library(RcppRoll)
 ```
 
 # Getting the books
@@ -287,6 +288,9 @@ This is the point in our analysis where we discover that we should do something
 about "--". LINK TIL TIDLIGERE, HVOR JEG NÆVNER AT HVIS IKKE VI FJERNER DEM,
 VIL VI SENERE OPDAGE AT DE ER ET PROBLEM.
 
+FASCINERENDE NOK DUKKER My dearest Emma ikke op som produkt efter "--" er fjernet.
+
+
 There is room for improvement in the NER. "My dearest Emma", which appears in volume 3, chapter 13 of Emma, is probably not a product.
 
 We can also note that Austen uses "--" when a new speaker starts talking. That should probably be fixed. It becomes even more apparent looking at the "PUNCT" pos:
@@ -301,7 +305,7 @@ tokens %>%
 
 
 The named entities are recognized. But we recognize for each token. In the example above, we saw that a named entity, a product, "My dearest Emma" was recognized. Incorrectly, but the concept holds.
-VI SKAL HAVE ILLUSTRERET OVENFOR AT "My dearest Emma" ER ET PRODUCT.
+VI SKAL HAVE ILLUSTRERET OVENFOR AT "My dearest Emma" ER ET PRODUCT. 
 ```{r}
 tokens %>% 
   filter(str_starts(entity, "PRODUCT")) %>% 
@@ -317,10 +321,12 @@ tokens %>%
   filter(book == "Emma", 
          volume == 3, 
          chapter == 13,
-         sentence_id == 82) %>% 
-  filter(entity != "")
+         sentence_id == 82)
 
 ```
+
+OG DENNE DUER NATURLIGVIS IKKE SOM EKSEMPEL LÆNGERE, FOR NÅR JEG FJERNER "--" 
+ÆNDRES NUMMERERINGEN AF SÆTNINGER NATURLIGVIS OGSÅ!
 
 I would now like to be able to extract these three named entities. Not as above, but as "My dearest Emma", "hour" and "Emma"
 
@@ -366,6 +372,53 @@ tail(named_entities)
 ```
 
 ```{r}
-sentences
+tokens %>% head(n = 10)
+```
+
+
+Sentiment
+
+afinn
+
+Rolling aggregates operate in a fixed width window. You won’t find them in base R or in dplyr, but there are many implementations in other packages, such as RcppRoll.
+
+```{r}
+AFINN <- get_sentiments(lexicon = "afinn")
+str(AFINN)
+```
+ikke meget nyttig:
+```{r}
+tokens %>% left_join(AFINN, by = c("token" = "word")) %>% 
+  group_by(book, volume, chapter, sentence_id) %>% 
+  summarise(sentiment = sum(value, na.rm = T)) %>% 
+  ungroup() %>% 
+  group_by(book) %>% 
+  mutate(rækkefølge = row_number()) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = rækkefølge, y = sentiment)) +
+  geom_line() +
+  facet_wrap(~book, scales = "free")
+```
+```{r}
+library(zoo)
+library(data.table)
+
+n = 50
+tokens %>% left_join(AFINN, by = c("token" = "word")) %>% 
+  group_by(book, volume, chapter, sentence_id) %>% 
+  summarise(sentiment = mean(value, na.rm = T)) %>% 
+  ungroup() %>% 
+  group_by(book) %>% 
+  mutate(rækkefølge = row_number()) %>% 
+  ungroup() %>% 
+  group_by(book) %>% 
+  mutate(rolling_sentiment = frollmean(sentiment, n, na.rm =T )) %>% 
+  ungroup() %>% 
+  ggplot(aes(rækkefølge, rolling_sentiment)) +
+  geom_line() +
+  facet_wrap(vars(book))
+
+
+
 ```
 
