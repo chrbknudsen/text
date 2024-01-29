@@ -117,6 +117,11 @@ books <- books %>%
 
 ```
 
+```{r}
+books$chapter %>% unique()
+```
+
+
 Looking at these two columns, we discover that some of the chapter (and volume)
 numbers are in roman numerals.
 
@@ -124,8 +129,8 @@ The utils-package has an as.roman function. It can read both roman numerals (as 
 and numbers (both as numeric and as text) and return an object of class "roman".
 Which has the type of numeric:
 ```{r}
-typeof(as.roman("10"))
-as.roman("III")
+typeof(as.roman(10))
+as.integer(as.roman("III"))
 ```
 One detail. There are whitespaces in the roman numerals we already have, and 
 that messes up the coercion:
@@ -161,8 +166,9 @@ head(sentences) %>%
 sentences %>% 
   head() %>% 
   unnest_longer(tokens) %>% 
-  unnest_wider(tokens) %>% 
-  select(sentence_id:entity)
+  unnest_wider(tokens) 
+#  select(sentence_id:entity) 
+
 ```
 
 Let us do it for the entire dataset:
@@ -353,4 +359,4 @@ tokens %>%
             token_id = min(token_id),
             entitet = paste0(token, collapse = " "))
 ```
-
+der må være en enklere måde...
