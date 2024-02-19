@@ -27,7 +27,7 @@ library(RcppRoll)
 ```
 
 # Getting the books
-
+Using the austenr package. And taking a look:
 ```{r}
 books <- austen_books()
 head(books, 10)
@@ -35,13 +35,18 @@ head(books, 10)
 
 # Getting data ready
 
-We have one line of text in each row in the *text* column. I would prefer one sentence. We also have some front matter in each book, that we do not need. There is some chapter information. And in *Emma* there is more than one volume.
+We have one line of text in each row in the *text* column. I would prefer one sentence. We also have some front matter in each book, that we do not need. There is some chapter information. And in *Emma* there is more than one volume. 
 
 ```{r}
 books %>% 
   filter(book == "Emma") %>% 
   slice(7:13)
 ```
+
+Some of the chapters (and volumes) a using roman numerals.
+And for some reason Austen used "--" (sometimes...) when a new speaker starts talking.
+
+We need to fix all that.
 
 Let us extract the volume and chapter information:
 
@@ -86,9 +91,11 @@ books <- books %>%
 str(books)
 ```
 
-In *text* we have a line of text, rather than a sentence. The interesting unit of analysis is not an arbitrary line of text. But a sentence.
+In *text* we have a line of text, rather than a sentence. The interesting unit of 
+analysis is not an arbitrary line of text. But a sentence.
 
-Let us get some sentences.
+We will get that later. For now we collect everything in order to get one
+chapter pr row:
 
 ```{r}
 books <- books %>% 
@@ -96,8 +103,6 @@ books <- books %>%
   summarise(sentences = paste0(text, collapse = " ")) %>% 
   ungroup()
 ```
-
-Now we have a dataframe with one chapter in each row. 
 
 If we do not handle it now, we will later discover that Austen sometimes uses 
 "--" to indicate that someone new is speaking. Lets get rid of that now, rather
@@ -119,26 +124,13 @@ books <- books %>%
   mutate(volume = str_remove(volume, "VOLUME")) 
 ```
 
-Now we just have to coerce chapter and volume to numbers. However:
-```{r}
-books %>% 
-  pull(chapter) %>% 
-  unique()
-```
+Now we just have to coerce chapter and volume to numbers. However, as noted before
+some of the books use roman numerals for numbering chapters and volumes.
 
 
-```{r}
-books$chapter %>% unique()
-```
-
-
-Looking at these two columns, we discover that some of the chapter (and volume)
-numbers are in roman numerals.
-
-Roman numerals (and whitespace at the beginning).
-Looking at these two columns, we discover that some of the chapter (and volume) numbers are in roman numerals.
-
-The utils-package has an as.roman function. It can read both roman numerals (as text), and numbers (both as numeric and as text) and return an object of class "roman". Which has the type of numeric:
+The utils-package has an as.roman function. It can read both roman numerals (as 
+text), and numbers (both as numeric and as text) and return an object of class 
+"roman". Which has the type of numeric:
 
 
 ```{r}
@@ -146,7 +138,8 @@ typeof(as.roman(10))
 as.integer(as.roman("III"))
 ```
 
-One detail. There are whitespaces in the roman numerals we already have, and that messes up the coercion:
+One detail. There are whitespaces in the roman numerals we already have. That
+messes up the coercion: str_trim() handles that for us:
 
 ```{r}
 books <- books %>% 
@@ -157,25 +150,29 @@ books <- books %>%
   arrange(book, volume, chapter)
 ```
 
-Now we have a dataframe with one chapter pr row. Lets tokenize! (this is the point where my computer spins up the ventilator... But the task is not large enough to warrent trying to parallelise it) Eller også er den - for det tager noget længere tid på tærten. Det er furrr vi skal have fat på
+Now we have a dataframe with one chapter pr row. Lets tokenize! We are going 
+to use `spacyr` for that. Kinda cheating, since it is a wrapper on top of the 
+Python library Spacy. We need to download a languagemodel, and initialize it.
+
+Before doing that we have installed spacy:
+```{r eval = F}
+spacy_install()
+spacy_download_langmodel("en_core_web_lg")
+```
+
+
+```{r}
+spacy_initialize(model='en_core_web_lg')
+```
+
+And now, I'll map `spacy_parse` on the individual chapters in the dataframe.
+This is the point where my computer spins up the ventilator... But the task 
+is not large enough to warrent trying to parallelise it. 
 
 ```{r}
 sentences <- books %>% 
   mutate(tokens = map(sentences, spacy_parse))
 ```
-
-DET ER MED en_core_web_sm. 
-
-hvad har vi ellers?
-
-Hvordan får jeg indlæst den store, i stedet for den lille?
-
-```{r}
-spacy_download_langmodel("en_core_web_lg")
-spacy_initialize(model='en_core_web_lg')
-
-```
-
 
 
 The result is placed in a list column:
@@ -196,7 +193,6 @@ sentences %>%
   head() %>% 
   unnest_longer(tokens) %>% 
   unnest_wider(tokens) 
-#  select(sentence_id:entity) 
 
 
 tokens <- sentences %>% 
@@ -219,6 +215,7 @@ Some columns are not really needed now. Let us get rid of that:
 
 ```{r}
 tokens <- tokens %>% select(-doc_id)
+head(tokens)
 ```
 
 
@@ -230,9 +227,6 @@ pos is "part of speach", or word class.
 
 entity is the named entity that spacyr recognizes. "Dashwood" eg, is a GPE_B, that is, a geopolitical entity. The "B" indicates that this word is at the beginning of the named entity. In this case we only have one word.
 
-```{r}
-tokens %>% head()
-```
 
 What types of pos do we have?
 
@@ -320,49 +314,24 @@ tokens %>%
   filter(str_starts(entity, "PRODUCT"))
 ```
 
-This is the point in our analysis where we discover that we should do something
-about "--". LINK TIL TIDLIGERE, HVOR JEG NÆVNER AT HVIS IKKE VI FJERNER DEM,
-VIL VI SENERE OPDAGE AT DE ER ET PROBLEM.
 
-FASCINERENDE NOK DUKKER My dearest Emma ikke op som produkt efter "--" er fjernet.
+There is room for improvement in the NER. "Crown", is probably not a product.
 
-
-There is room for improvement in the NER. "My dearest Emma", which appears in volume 3, chapter 13 of Emma, is probably not a product.
-
-We can also note that Austen uses "--" when a new speaker starts talking. That should probably be fixed. It becomes even more apparent looking at the "PUNCT" pos:
+Anyway. Which adjectives, nouns, adverbs and verbs are most commonly used in the 
+different novels? Let us count:
 
 ```{r}
+write_csv(tokens, "weird.csv")
+tokens <- read_csv("weird.csv")
 tokens %>% 
-  filter(pos == "PUNCT") %>% 
-  pull(token) %>% 
-  unique()
+  select(book,token, pos) %>% 
+  group_by(book, pos, token) %>% 
+  summarise(number = n()) %>% 
+  arrange(desc(number))
 ```
 
 
 
-The named entities are recognized. But we recognize for each token. In the example above, we saw that a named entity, a product, "My dearest Emma" was recognized. Incorrectly, but the concept holds.
-VI SKAL HAVE ILLUSTRERET OVENFOR AT "My dearest Emma" ER ET PRODUCT. 
-```{r}
-tokens %>% 
-  filter(str_starts(entity, "PRODUCT")) %>% 
-  filter(book == "Emma") %>% 
-  filter(chapter == 13) %>% 
-  select(sentence_id:token, entity)
-```
-
-Looking specifically at sentence 82 in that chapter, we have recognized three entities. A product (incorrectly), an expression of time, and a person:
-
-```{r}
-tokens %>% 
-  filter(book == "Emma", 
-         volume == 3, 
-         chapter == 13,
-         sentence_id == 82)
-
-```
-
-OG DENNE DUER NATURLIGVIS IKKE SOM EKSEMPEL LÆNGERE, FOR NÅR JEG FJERNER "--" 
-ÆNDRES NUMMERERINGEN AF SÆTNINGER NATURLIGVIS OGSÅ!
 
 I would now like to be able to extract these three named entities. Not as above, but as "My dearest Emma", "hour" and "Emma"
 
@@ -423,12 +392,12 @@ Hvordan får jeg fat på de ord der kun bliver brugt i en af
 bøgerne?
 
 ```{r}
-tokens %>% 
-  mutate(word = str_to_lower(token)) %>% 
-  group_by(book) %>% 
-  distinct(word) %>% 
-  arrange(word)
-  summarise(word_count = n())
+# tokens %>% 
+#   mutate(word = str_to_lower(token)) %>% 
+#   group_by(book) %>% 
+#   distinct(word) %>% 
+#   arrange(word)
+#   summarise(word_count = n())
 
 ```
 
@@ -444,7 +413,7 @@ udsagnsord?
 
 Rolling aggregates operate in a fixed width window. You won’t find them in base R or in dplyr, but there are many implementations in other packages, such as RcppRoll.
 
-```{r}
+```{r indlæs AFINN}
 AFINN <- get_sentiments(lexicon = "afinn")
 str(AFINN)
 ```
@@ -514,5 +483,8 @@ named_entities %>%
 
 # produkter?
 
+```{r}
+1+1
+```
 
-
+word in context
