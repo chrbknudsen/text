@@ -43,6 +43,7 @@ books %>%
   slice(7:13)
 ```
 
+
 Some of the chapters (and volumes) a using roman numerals.
 And for some reason Austen used "--" (sometimes...) when a new speaker starts talking.
 
@@ -105,12 +106,19 @@ books <- books %>%
 ```
 
 If we do not handle it now, we will later discover that Austen sometimes uses 
-"--" to indicate that someone new is speaking. Lets get rid of that now, rather
+"--" to indicate that someone new is speaking. Underscores are also present,
+apparently primarily indicating italics. That will be interpreted as nouns later, 
+because of... reasons...
+
+
+
+Lets get rid of that now, rather
 than later:
 
 ```{r}
 books <- books %>% 
-  mutate(sentences = str_replace_all(sentences, "--", " "))
+  mutate(sentences = str_replace_all(sentences, "--", " "),
+         sentences = str_replace_all(sentences, "_", " "))
 ```
 
 
@@ -321,40 +329,29 @@ Anyway. Which adjectives, nouns, adverbs and verbs are most commonly used in the
 different novels? Let us count:
 
 ```{r}
-write_csv(tokens, "weird.csv")
-tokens <- read_csv("weird.csv")
+
+library(kableExtra)
 tokens %>% 
   select(book,token, pos) %>% 
+  filter(pos %in% c("NOUN", "ADV", "VERB", "ADJ")) %>% 
   group_by(book, pos, token) %>% 
   summarise(number = n()) %>% 
-  arrange(desc(number))
-```
-
-
-
-
-I would now like to be able to extract these three named entities. Not as above, but as "My dearest Emma", "hour" and "Emma"
-
-```{r}
-tokens %>% 
-  filter(book == "Emma", 
-         volume == 3, 
-         chapter == 13,
-         sentence_id == 82) %>% 
-  filter(entity != "") %>% # we are not interested in empty entities
-  mutate(entitet = case_when(
-    str_ends(entity, "_B") ~ token_id, # TRUE if it is the beginning of a NE
-    .default = NA
-  )) %>% 
-  fill(entitet, .direction = "down") %>% # Filling down - if the row contains a NE, it now contains the position of
-                                         # the beginning of the NE
+  arrange(desc(number)) %>% 
+  slice(1:5) %>% 
   ungroup() %>% 
-  mutate(entity = str_remove(entity, "_B|_I")) %>% # Only interested in the type of NE
-  group_by(book, volume, chapter, sentence_id, entity, entitet) %>% 
-  summarise(  entiteten = paste0(token, collapse = " "))
+  select(-number) %>% 
+  group_by(pos, book) %>% 
+  summarise(ord = paste(token, collapse = "<br>")) %>% 
+  pivot_wider(names_from = book,
+              values_from = ord) %>% 
+mutate_all(linebreak) %>% 
+  kable()
+  
 ```
 
-Now we should do this on the entire dataset:
+
+HER SKAL DER VÆRE ET EKSEMPEL MED EN NE DER BESTÅR AF MERE END ET ORD
+
 ```{r}
 named_entities <- tokens %>% 
   filter(entity != "") %>% # we are not interested in empty entities
@@ -376,9 +373,6 @@ named_entities <- tokens %>%
 tail(named_entities)
 ```
 
-```{r}
-tokens %>% head(n = 10)
-```
 
 
 # Comparing vocabulary
@@ -483,8 +477,5 @@ named_entities %>%
 
 # produkter?
 
-```{r}
-1+1
-```
 
 word in context
